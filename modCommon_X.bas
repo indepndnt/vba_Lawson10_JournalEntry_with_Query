@@ -52,6 +52,30 @@ Public Function inXmlDme(Optional ByVal sRoot As String = "/DME") As Boolean
         inXmlDme = True
     End If
 End Function
+Public Sub inCellType(ByVal rBase As Range, ByVal iRow As Integer, ByVal iCol As Integer)
+    Dim sType As String
+    Dim s As String
+    sType = inXmlAttribVal("//COLUMN[" & iCol & "]", "type")
+    s = inQueryCell(iRow, iCol)
+    Select Case sType
+        Case "BCD" ' "Binary Coded Decimal" is the format used with currency fields. It has a trailing minus for negative numbers.
+            s = Replace(s, " ", "")
+            If s Like "*-" Then s = "-" & Replace(s, "-", "")
+            rBase(iRow, iCol).NumberFormat = "#,##0.00_);[Red](#,##0.00)"
+            rBase(iRow, iCol).Value = Val(s)
+        Case "NUMERIC" ' This is the type for numeric codes (e.g. company code or fiscal year or object id)
+            rBase(iRow, iCol).NumberFormat = "General"
+            rBase(iRow, iCol).Value = s
+        Case "ALPHA", "ALPHALC" ' Text or alphanumeric fields (ALPHA is case insensetive and ALPHALC includes LowerCase)
+            rBase(iRow, iCol).NumberFormat = "@"
+            If Len(s) > 0 Then rBase(iRow, iCol).Value = s
+        Case "YYYYMMDD" ' (date)
+            rBase(iRow, iCol).NumberFormat = "[$-409]d-mmm-yyyy;@"
+            rBase(iRow, iCol).Value = s
+        Case Else
+            rBase(iRow, iCol).Value = s
+    End Select
+End Sub
 Public Function inQueryCell(ByVal iRow As Integer, ByVal iColumn As Integer, Optional sField As String = "//RECORD", Optional sChild As String = "/COLS/COL") As String
     inQueryCell = inXmlData(sField, iRow, sChild & "[" & iColumn & "]")
 End Function
@@ -72,13 +96,13 @@ Public Function inXmlData(ByVal sField As String, ByVal iOrdinal As Integer, Opt
         inXmlData = ""
     End If
 End Function
-Public Function inXmlAttribVal(Optional ByVal sField As String = "//RECORDS", Optional ByVal sAttrib As String = "count") As Long
+Public Function inXmlAttribVal(Optional ByVal sField As String = "//RECORDS", Optional ByVal sAttrib As String = "count") As String
     Dim xmlNode As MSXML2.IXMLDOMNode
     Set xmlNode = g_oDom.DocumentElement.SelectSingleNode(sField)
     If xmlNode Is Nothing Then
         inXmlAttribVal = False
         Exit Function
     Else
-        inXmlAttribVal = Val(xmlNode.Attributes.getNamedItem(sAttrib).Text)
+        inXmlAttribVal = xmlNode.Attributes.getNamedItem(sAttrib).Text
     End If
 End Function
