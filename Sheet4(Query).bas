@@ -83,7 +83,7 @@ On Error GoTo errHandler
         Exit Function
     End If
 
-    iCount = inXmlAttribVal() ' Get count of records returned
+    iCount = Val(inXmlAttribVal()) ' Get count of records returned
 
     For row = 1 To iCount ' Copy GL query data into worksheet
         For col = 1 To iColumns
@@ -116,7 +116,7 @@ On Error GoTo errHandler
                         If Not g_oDom.LoadXML(s) Then
                             Call NonFatal("Could not load API Attachments: ", "Row " & row + rngOut.row)
                         Else
-                            iItems = inXmlAttribVal("/ACTION/LIST", "numRecords") ' number of matching attachments
+                            iItems = Val(inXmlAttribVal("/ACTION/LIST", "numRecords")) ' number of matching attachments
                             If iItems = 0 Then
                                 rngOut(row, iColumns + 1).Value = "no images"
                             Else
