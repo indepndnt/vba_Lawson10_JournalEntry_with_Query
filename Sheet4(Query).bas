@@ -87,7 +87,7 @@ On Error GoTo errHandler
 
     For row = 1 To iCount ' Copy GL query data into worksheet
         For col = 1 To iColumns
-            rngOut(row, col).Value = inQueryCell(row, col)
+            Call inCellType(rngOut, row, col)
         Next col
     Next row
 
