@@ -14,17 +14,7 @@
 '
 ' Home is https://github.com/indepndnt/vba_Lawson10_JournalEntry_with_Query/
 '
-Public Sub inGLInvoices() ' Used to run only inGLTap - point 'Query' button on the Query tab to here.
-On Error GoTo errHandler
-    If Not CheckUserAttributes() Then Login
-    If Not inGLTap() Then
-        Call NonFatal("Query Error")
-    End If
-    Exit Sub
-errHandler:
-    MsgBox ("Error: " & Err.Number & ":" & Err.Description)
-End Sub
-Public Function inGLTap() As Boolean
+Public Sub inGLTap()
 On Error GoTo errHandler
     Const urlDrill As String = "/servlet/Router/Drill/erp?"  ' Infor server path for drill
     Const urlAttach As String = "/lawson-ios/action/ListAttachments?" ' Infor server path for Attachment List
@@ -40,58 +30,73 @@ On Error GoTo errHandler
     Dim rCell As Range
     Dim iGlObjId As Integer ' Column of GLTRANS OBJ_ID field
     Dim iApObjId As Integer ' Column of APINVOICE OBJ_ID field
+    Dim iGlDesc As Integer ' Column of DESCRIPTION field (for hyperlink)
+    Dim shtReport As Worksheet
     Dim iItems As Integer
     Dim sAttName As String
     Dim sAttText As String
+    Dim bInclAp As Boolean
+    Dim bExclChk As Boolean
+    Dim bImgOpen As Boolean
 
-    inGLTap = False ' Defaults if no result
-    Sheet4.Range("6:6").Clear ' clear any previous error messages
-    Sheet4.Range("A6").Value = "Error messages go here:"
-    Call fDeleteFrom(Sheet4.Range("A9")) ' delete any previous outputs and reset UsedRange
+    If Not CheckUserAttributes() Then Login
+    bInclAp = Me.Range("incl_ap").Value
+    bExclChk = Me.Range("excl_chk").Value
+    bImgOpen = Me.Range("img_open").Value
+    Me.Range("query_errors").EntireRow.Clear ' clear any previous error messages
+    Me.Range("query_errors").Value = "Error messages go here:"
+    Call fDeleteFrom(Me.Range("query_output")(2, 1)) ' delete any previous outputs and reset UsedRange
 
-    Set rngOut = Sheet4.Range("A8", Range("A8").End(xlToRight)) ' Build query field list from worksheet column heading names
+    Set shtReport = ReportSheet
+    Set rngOut = Me.Range("query_output", Me.Range("query_output").End(xlToRight)) ' Build query field list from worksheet column heading names
     iColumns = rngOut.Columns.Count
     sFields = ""
     For Each rCell In rngOut
         If sFields <> "" Then sFields = sFields & ";"
         sFields = sFields & rCell.Value
+        If rCell.Value = "DESCRIPTION" Then iGlDesc = rCell.Column
         If rCell.Value = "OBJ-ID" Then iGlObjId = rCell.Column
         If rCell.Value = "APDISTRIB.API-OBJ-ID" Then iApObjId = rCell.Column
     Next rCell
-    If (iGlObjId = 0 Or iApObjId = 0) And Range("Q1").Value Then
-        Range("Q1").Value = False
+    If (iGlObjId = 0 Or iApObjId = 0) And bInclAp Then
+        Me.Range("incl_ap").Value = False
         NonFatal ("The 'OBJ-ID' or 'APDISTRIB.API-OBJ-ID' columns are missing.")
     End If
 
-    Set rngOut = Sheet4.Range("A9")
+    Set rngOut = Me.Range("query_output")(2, 1)
+    If Me.Range("max_records").Value > 10000 Then Me.Range("max_records").Value = 10000
 
-    s = "PROD=" & g_sProductLine ' Start building POST data string with Product Line
-    s = s & "&FILE=GLTRANS&INDEX=GLTSET3" ' ' Table GLTRANS, criteria set GLTSET3: key = co=account=subacct=acct-unit=fy=pd
-    s = s & "&KEY=" & FilterForWeb(Sheet4.Range("D1").Value & "=" & Sheet4.Range("D3").Value & "=0=" & Sheet4.Range("D2").Value & "=" & Sheet4.Range("D4").Value & "=" & Sheet4.Range("D5").Value)
-    s = s & "&FIELD=" & FilterForWeb(sFields)
-    s = s & "&OUT=XML&NEXT=FALSE" ' NEXT=FALSE means don't give me the RELOAD string.
-    s = s & "&MAX=" & Sheet4.Range("Q3").Value & "&keyUsage=PARAM" ' Give me up to (value in cell Q3) records.
+    s = "PROD=" & g_sProductLine & "&FILE=GLTRANS&INDEX=GLTSET3" ' Table GLTRANS, criteria set GLTSET3: key = co=account=subacct=acct-unit=fy=pd
+    s = s & "&KEY=" & FilterForWeb(Me.Range("query_company").Value & "=" & Me.Range("query_account").Value & "=0=" & _
+        Me.Range("query_acctunit").Value & "=" & Me.Range("query_fy").Value & "=" & Me.Range("query_period").Value)
+    s = s & "&FIELD=" & FilterForWeb(sFields) & "&OUT=XML&NEXT=FALSE&MAX=" & Me.Range("max_records").Value & "&keyUsage=PARAM"
     s = SendURL(s, "D")
     SetXMLObject ' Load IE page document into XML document object
-    If Not g_oDom.LoadXML(s) Then
-        inGLTap = False ' If we couldn't load g_oDom with the Lawson output then exit with an error - there's no data.
-        Exit Function
-    End If
+    If Not g_oDom.LoadXML(s) Then Exit Sub
     If Not inXmlDme Then ' do we have a /DME xml document?
         Call NonFatal(inXmlData("/ERROR/MSG", 1), "GLTRANS Query") ' Error message from GLTRANS query
-        inGLTap = True
-        Exit Function
+        Exit Sub
     End If
 
-    iCount = Val(inXmlAttribVal()) ' Get count of records returned
+    iCount = Val(g_oDom.DocumentElement.SelectSingleNode("//RECORDS").Attributes.getNamedItem("count").Text) ' Get count of records returned
+    If iCount = 0 Then
+        rngOut(2, 1).Value = "No results returned."
+        Exit Sub
+    End If
 
-    For row = 1 To iCount ' Copy GL query data into worksheet
-        For col = 1 To iColumns
-            Call inCellType(rngOut, row, col)
-        Next col
-    Next row
+    Application.ScreenUpdating = False
+    Dim qArray() As String
+    Call inQueryArray(qArray)
+    Call inArrayToRange(qArray, rngOut)
+    If Not shtReport Is ActiveSheet Then
+        For row = 1 To iCount
+            rngOut(row, iGlDesc).Hyperlinks.Add Anchor:=rngOut(row, iGlDesc), Address:="", ScreenTip:="Journal Entry Report", _
+                SubAddress:="'" & shtReport.Name & "'!" & shtReport.Range("A12").Address
+        Next row
+    End If
+    Application.ScreenUpdating = True
 
-    If Sheet4.Range("Q1").Value Then
+    If bInclAp Then
         For row = 1 To iCount ' For each result with an API OBJ-ID, try to get image URLs
             If rngOut(row, iApObjId).Value > 0 Then
                 s = "_PDL=" & g_sProductLine
@@ -116,16 +121,20 @@ On Error GoTo errHandler
                         If Not g_oDom.LoadXML(s) Then
                             Call NonFatal("Could not load API Attachments: ", "Row " & row + rngOut.row)
                         Else
-                            iItems = Val(inXmlAttribVal("/ACTION/LIST", "numRecords")) ' number of matching attachments
+                            iItems = Val(g_oDom.DocumentElement.SelectSingleNode("/ACTION/LIST").Attributes.getNamedItem("numRecords").Text) ' number of matching attachments
                             If iItems = 0 Then
                                 rngOut(row, iColumns + 1).Value = "no images"
                             Else
+                                col = iColumns
                                 For i = 1 To iItems
                                     sAttName = inXmlData("//ATTACHMENT", i, "ATTACHMENT-NAME") ' //ATTACHMENT/ATTACHMENT-NAME ("Check Image" or "Invoice Image")
                                     sAttText = inXmlData("//ATTACHMENT", i, "ATTACHMENT-TEXT") ' //ATTACHMENT/ATTACHMENT-TEXT (image URL)
-                                    rngOut(row, iColumns + i).Value = sAttName & ": " & sAttText
-                                    ActiveSheet.Hyperlinks.Add Anchor:=rngOut(row, iColumns + i), Address:=sAttText
-                                    If Sheet4.Range("Q2") And Left(sAttName, 7) = "Invoice" Then rngOut(row, iColumns + i).Hyperlinks(1).Follow ' Open image if flag set
+                                    If Not bExclChk Or Left(sAttName, 5) <> "Check" Then
+                                        col = col + 1
+                                        rngOut(row, col).Value = sAttName & ": " & sAttText
+                                        ActiveSheet.Hyperlinks.Add Anchor:=rngOut(row, col), Address:=sAttText
+                                        If bImgOpen Then rngOut(row, col).Hyperlinks(1).Follow ' Open image if flag set
+                                    End If
                                 Next i
                             End If
                         End If
@@ -134,21 +143,54 @@ On Error GoTo errHandler
             End If
         Next row
     End If
-    
-    inGLTap = True
-    Exit Function
+
+    Exit Sub
 errHandler:
     Call NonFatal("Error " & Err.Number & ": " & Err.Description, "Row " & row + rngOut.row)
     Resume Next
+End Sub
+Private Function ReportSheet() As Worksheet
+    On Error GoTo NoReport
+    Set ReportSheet = ActiveWorkbook.Sheets("Report")
+    Exit Function
+NoReport:
+    Set ReportSheet = ActiveSheet
 End Function
+Private Sub Worksheet_FollowHyperlink(ByVal Target As Hyperlink)
+    If Target.ScreenTip = "Journal Entry Report" Then
+        Dim rng As Range
+        Dim col(6) As Integer
+        For Each rng In Me.Range("query_output", Me.Range("query_output").End(xlToRight))
+            Select Case rng.Value2
+                Case "COMPANY"
+                    col(0) = rng.Column
+                Case "SYSTEM"
+                    col(1) = rng.Column
+                Case "JE-TYPE"
+                    col(2) = rng.Column
+                Case "GLCONTROL.CONTROL-GROUP"
+                    col(3) = rng.Column
+                Case "FISCAL-YEAR"
+                    col(4) = rng.Column
+                Case "ACCT-PERIOD"
+                    col(5) = rng.Column
+            End Select
+        Next rng
+        Dim sht As Worksheet
+        Set sht = ThisWorkbook.Sheets(Replace(Split(Target.SubAddress, "!")(0), "'", ""))
+        Set rng = Target.Range.Worksheet.Cells(Target.Range.row, 1)
+        Sheets("Report").inGL240 Co:=rng(1, col(0)).Value2, Sys:=rng(1, col(1)).Value2, JeType:=rng(1, col(2)).Value2, _
+            CtrlGrp:=rng(1, col(3)).Value2, FY:=rng(1, col(4)).Value2, Pd:=rng(1, col(5)).Value2
+    End If
+End Sub
 Private Sub NonFatal(ByVal sMsg As String, Optional ByVal sRange As String = "")
     Dim iColumn As Long
     Dim sAppend As String
-    iColumn = Range("XFD6").End(xlToLeft).Column + 1
+    iColumn = Me.Cells(Me.Range("query_errors").row, 16384).End(xlToLeft).Column + 1
     If sRange <> "" Then
         sAppend = " (" & sRange & ")"
     Else
         sAppend = ""
     End If
-    Cells(6, iColumn).Value = sMsg & sAppend
+    Me.Cells(Me.Range("query_errors").row, iColumn).Value = sMsg & sAppend
 End Sub
