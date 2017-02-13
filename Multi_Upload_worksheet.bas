@@ -282,8 +282,9 @@ Private Sub UploadJournalHeader()
         request_parameters = "_PDL=" & g_sProductLine
         Select Case headers(idx).function_code
             Case "A"        ' Add - ensure there's no JE #
-                If headers(idx).control_group_cell.Value2 = "" Or Me.auto_clear_numbers Then
+                If headers(idx).control_group  = 0 Or Me.auto_clear_numbers Then
                     headers(idx).control_group_cell.Value2 = ""
+                    headers(idx).control_group = 0
                     request_parameters = request_parameters & "&_TKN=GL40.2&_EVT=ADD&_RTN=DATA&_TDS=IGNORE&FC=Add"
                     headers(idx).response_cell.Value2 = ""  ' Clear the system response cell for the Header upload row on the spreadsheet
                 Else
@@ -291,7 +292,7 @@ Private Sub UploadJournalHeader()
                     status = 999
                 End If
             Case "C"        ' Change - ensure there is a JE #
-                If headers(idx).control_group_cell.Value2 <> "" Then
+                If headers(idx).control_group > 0 Then
                     request_parameters = request_parameters & "&_TKN=GL40.2&_EVT=CHG&_RTN=DATA&_TDS=IGNORE&FC=Change"
                     headers(idx).response_cell.Value2 = ""  ' Clear the system response cell for the Header upload row on the spreadsheet
                 Else
@@ -299,7 +300,7 @@ Private Sub UploadJournalHeader()
                     status = 999
                 End If
             Case "D"        ' Delete - ensure there is a JE #
-                If headers(idx).control_group_cell.Value2 <> "" Then
+                If headers(idx).control_group > 0 Then
                     ' ' deleting JE header requires hidden key (HK) value with Company, FY, Period, System, JE Type, JE #, and JE seq # formatted as 24 characters: ccccyyyymmsstccccccccqq
                     request_parameters = request_parameters & "&_TKN=GL40.2&_EVT=CHG&_RTN=DATA&_TDS=IGNORE&FC=Delete&HK=" & _
                         format(headers(idx).company, "0000") & format(headers(idx).post_date, "yyyymm") & headers(idx).system & _
@@ -521,14 +522,14 @@ Private Sub UploadJournalDetails()
                 status = 1 ' Status 1 = exit loop
         End Select
 
-        je = GetJournalHeader(company:=Me.Cells(row, detail_column_company).Value2, _
-            fiscal_year:=Me.Cells(row, detail_column_fiscal_year).Value2, _
-            acct_period:=Me.Cells(row, detail_column_acct_period).Value2, _
-            system:=Me.Cells(row, detail_column_system).Value2, _
-            je_type:=Me.Cells(row, detail_column_je_type).Value2, _
-            control_group:=Me.Cells(row, detail_column_control_group).Value2)
-
         If status = 0 Then ' if we haven't set status = 1 then continue with row upload
+            je = GetJournalHeader(company:=Me.Cells(row, detail_column_company).Value2, _
+                fiscal_year:=Me.Cells(row, detail_column_fiscal_year).Value2, _
+                acct_period:=Me.Cells(row, detail_column_acct_period).Value2, _
+                system:=Me.Cells(row, detail_column_system).Value2, _
+                je_type:=Me.Cells(row, detail_column_je_type).Value2, _
+                control_group:=Me.Cells(row, detail_column_control_group).Value2)
+
             request_parameters = request_parameters & "&_f39=" & je.company & "&_f44=" & je.fiscal_year & "&_f45=" & je.acct_period
             request_parameters = request_parameters & "&_f46=" & je.system & "&_f48=" & je.je_type & "&_f49=" & je.control_group
             If je.je_sequence <> 0 Then request_parameters = request_parameters & "&_f50=" & je.je_sequence ' JE Sequence # from Header, if there is one
