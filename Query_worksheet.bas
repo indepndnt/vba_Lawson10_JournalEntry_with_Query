@@ -1,4 +1,4 @@
-' Lawson Journal Entry Tool
+' VBA Lawson Excel Tools
 ' Copyright (C) 2016-2017 Joe Carey
 '
 ' This program is free software: you can redistribute it and/or modify it under the terms of the GNU General
@@ -12,7 +12,7 @@
 ' You should have received a copy of the GNU General Public License along with this program. If not, see
 ' <http://www.gnu.org/licenses/>.
 '
-' Home is https://github.com/indepndnt/vba_Lawson10_JournalEntry_with_Query/
+' Home is https://github.com/indepndnt/vba-Lawson-Excel-Tools
 '
 Option Explicit
 Private Sub GL_Query_Click()
